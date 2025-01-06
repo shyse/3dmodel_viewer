@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #2c2c2c;
+        }
+
+        #drop-area {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 2em;
+            text-align: center;
+            z-index: 10;
+            border: 3px dashed white;
+            border-radius: 10px;
+        }
+
+        #control-panel {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            color: white;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button, input {
+            background-color: #444;
+            color: white;
+            border: 1px solid #fff;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        input[type="color"] {
+            height: 40px;
+            width: 40px;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="drop-area">3Dモデルファイルをここにドラッグ＆ドロップ</div>
+    <div id="control-panel">
+        <button id="swap-axes">XYZ軸を入れ替える</button>
+        <button id="save-model">現在の状態で保存</button>
+        <button id="reset-rotation">回転をリセット</button>
+        <button id="reset-view">描画をリセット</button>
+        <input type="range" id="point-size" min="0.0001" max="0.01" step="0.0001" value="0.001">
+        <input type="color" id="background-color" value="#2c2c2c">
+    </div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/examples/jsm/controls/OrbitControls.js": "https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js",
+        "three/examples/jsm/loaders/PLYLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/PLYLoader.js",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js",
+        "three/examples/jsm/loaders/FBXLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/FBXLoader.js",
+        "three/examples/jsm/loaders/OBJLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/OBJLoader.js",
+        "three/examples/jsm/exporters/PLYExporter.js": "https://unpkg.com/three@0.159.0/examples/jsm/exporters/PLYExporter.js"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+        import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+        import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+        import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+        import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+        import { PLYExporter } from 'three/examples/jsm/exporters/PLYExporter.js';
+
+        let scene, camera, renderer, controls;
+        let loadedModel = null;
+        let originalFileType = '';
+
+        const dropArea = document.getElementById('drop-area');
+        const swapAxesButton = document.getElementById('swap-axes');
+        const saveModelButton = document.getElementById('save-model');
+        const resetRotationButton = document.getElementById('reset-rotation');
+        const resetViewButton = document.getElementById('reset-view');
+        const pointSizeSlider = document.getElementById('point-size');
+        const backgroundColorPicker = document.getElementById('background-color');
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x2c2c2c, 1);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            controls.enableZoom = true;
+            controls.enableRotate = true;
+            controls.enablePan = true;
+
+            camera.position.set(0, 1, 5);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            setupEventListeners();
+            animate();
+        }
+
+        function setupEventListeners() {
+            document.body.addEventListener('dragover', (event) => event.preventDefault());
+            document.body.addEventListener('drop', handleFileDrop);
+            swapAxesButton.addEventListener('click', swapAxes);
+            saveModelButton.addEventListener('click', saveModel);
+            resetRotationButton.addEventListener('click', resetRotation);
+            resetViewButton.addEventListener('click', resetView);
+            pointSizeSlider.addEventListener('input', updatePointSize);
+            backgroundColorPicker.addEventListener('input', updateBackgroundColor);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function handleFileDrop(event) {
+            event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                console.log('ファイルがドロップされました:', file.name);
+                loadModel(file);
+                dropArea.style.display = 'none';
+            } else {
+                alert('ファイルをドラッグ＆ドロップしてください。');
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function loadModel(file) {
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            console.log('ファイル拡張子:', fileExtension);
+            originalFileType = fileExtension;
+
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                const data = event.target.result;
+                const loaders = {
+                    'ply': loadPLY,
+                    'gltf': loadGLTF,
+                    'glb': loadGLTF,
+                    'fbx': loadFBX,
+                    'obj': loadOBJ
+                };
+
+                const loader = loaders[fileExtension];
+                if (loader) {
+                    loader(data);
+                } else {
+                    alert('サポートされていないファイル形式です。');
+                    console.error('サポートされていないファイル形式:', fileExtension);
+                }
+            };
+
+            reader.onerror = function(error) {
+                console.error('ファイルの読み込みでエラー:', error);
+                alert('ファイルの読み込みに失敗しました。');
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        let swapCount = 0;
+        function swapAxes() {
+            if (loadedModel) {
+                swapCount++;
+                const matrix = new THREE.Matrix4();
+                const rotations = [
+                    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+                    [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                    [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+                ];
+                matrix.set(...rotations[swapCount % 3]);
+
+                loadedModel.applyMatrix4(matrix);
+
+                if (loadedModel.geometry) {
+                    loadedModel.geometry.computeBoundingBox();
+                    loadedModel.geometry.computeBoundingSphere();
+                }
+
+                fitCameraToObject(loadedModel);
+                console.log('XYZ軸が入れ替えられました');
+            } else {
+                console.warn('モデルがロードされていません。');
+            }
+        }
+
+        function saveModel() {
+            if (loadedModel) {
+                const exporter = new PLYExporter();
+                const options = { binary: true, littleEndian: true };
+                
+                exporter.parse(loadedModel, function (result) {
+                    const blob = new Blob([result], { type: 'application/octet-stream' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = 'exported_model.ply';
+                    link.click();
+                }, options);
+
+                console.log('モデルが保存されました');
+            } else {
+                console.warn('保存するモデルがありません。');
+            }
+        }
+
+        function resetRotation() {
+            if (loadedModel) {
+                // モデルの回転をリセット
+                loadedModel.rotation.set(0, 0, 0);
+                
+                // モデルの位置をリセット
+                loadedModel.position.set(0, 0, 0);
+
+                // カメラとコントロールをリセット
+                fitCameraToObject(loadedModel);
+
+                console.log('モデルの回転と位置がリセットされました');
+            } else {
+                console.warn('リセットするモデルがありません。');
+            }
+        }
+
+        function setupLights() {
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+        }
+
+        function resetView() {
+            // シーン内の全オブジェクトを削除
+            while (scene.children.length > 0) {
+                const obj = scene.children[0];
+                scene.remove(obj);
+            }
+
+            // モデルと関連データを初期化
+            loadedModel = null;
+            originalFileType = '';
+
+            // カメラとコントロールの初期化
+            camera.position.set(0, 1, 5);
+            camera.lookAt(0, 0, 0);
+            controls.target.set(0, 0, 0);
+            controls.reset();
+
+            // 背景色をデフォルトに戻す
+            renderer.setClearColor(0x2c2c2c, 1);
+            renderer.clear();
+
+            // 光源の再設定
+            setupLights();
+
+            // ドロップエリアを再表示
+            dropArea.style.display = 'flex';
+
+            console.log('描画がリセットされました');
+        }
+
+        function updatePointSize() {
+            if (loadedModel && loadedModel.material) {
+                loadedModel.material.size = parseFloat(pointSizeSlider.value);
+                console.log('点のサイズが更新されました:', loadedModel.material.size);
+            }
+        }
+
+        function updateBackgroundColor() {
+            const color = new THREE.Color(backgroundColorPicker.value);
+            renderer.setClearColor(color);
+            console.log('背景色が更新されました:', color.getHexString());
+        }
+
+        function loadPLY(data) {
+            console.log('PLYファイルの読み込みを開始...');
+
+            const loader = new PLYLoader();
+            
+            try {
+                const geometry = loader.parse(data);
+                console.log('ジオメトリ情報:', geometry);
+                
+                const material = new THREE.PointsMaterial({ 
+                    size: parseFloat(pointSizeSlider.value),
+                    vertexColors: geometry.attributes.color !== undefined
+                });
+
+                loadedModel = new THREE.Points(geometry, material);
+                scene.add(loadedModel);
+
+                fitCameraToObject(loadedModel);
+                
+            } catch (error) {
+                console.error('PLYファイルのパースでエラーが発生しました:', error);
+                alert('PLYファイルの読み込みに失敗しました。');
+            }
+        }
+
+        function loadGLTF(data) {
+            console.log('GLTF/GLBファイルの読み込みを開始...');
+            
+            const loader = new GLTFLoader();
+            loader.parse(data, '', (gltf) => {
+                loadedModel = gltf.scene;
+                scene.add(loadedModel);
+                fitCameraToObject(loadedModel);
+                console.log('GLTFモデルがシーンに追加されました。');
+            }, (error) => {
+                console.error('GLTFファイルのパースでエラーが発生しました:', error);
+                alert('GLTFファイルの読み込みに失敗しました。');
+            });
+        }
+
+        function loadFBX(data) {
+            console.log('FBXファイルの読み込みを開始...');
+            
+            const loader = new FBXLoader();
+            loader.parse(data, '', (object) => {
+                loadedModel = object;
+                scene.add(loadedModel);
+                fitCameraToObject(loadedModel);
+                console.log('FBXモデルがシーンに追加されました。');
+            }, (error) => {
+                console.error('FBXファイルのパースでエラーが発生しました:', error);
+                alert('FBXファイルの読み込みに失敗しました。');
+            });
+        }
+
+        function loadOBJ(data) {
+            console.log('OBJファイルの読み込みを開始...');
+            
+            const loader = new OBJLoader();
+            loader.parse(data, (object) => {
+                loadedModel = object;
+                scene.add(loadedModel);
+                fitCameraToObject(loadedModel);
+                console.log('OBJモデルがシーンに追加されました。');
+            }, (error) => {
+                console.error('OBJファイルのパースでエラーが発生しました:', error);
+                alert('OBJファイルの読み込みに失敗しました。');
+            });
+        }
+
+        function fitCameraToObject(object) {
+            const box = new THREE.Box3().setFromObject(object);
+            const center = box.getCenter(new THREE.Vector3());
+            
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            const fov = camera.fov * (Math.PI / 180);
+            
+            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov / 2));
+            
+            // カメラ位置をリセット
+            camera.position.set(0, 0, cameraZ * 2);
+            camera.lookAt(center);
+
+            // コントロールのターゲットを中心に設定
+            controls.target.copy(center);
+            controls.update();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
