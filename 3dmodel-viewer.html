@@ -66,7 +66,7 @@
     <div id="drop-area">3Dモデルファイルをここにドラッグ＆ドロップ</div>
     <div id="control-panel">
         <button id="swap-axes">XYZ軸を入れ替える</button>
-        <button id="save-model">現在の状態で保存</button>
+        <button id="save-model">現在のXYZ軸で保存</button>
         <button id="reset-rotation">回転をリセット</button>
         <button id="reset-view">描画をリセット</button>
         <input type="range" id="point-size" min="0.0001" max="0.01" step="0.0001" value="0.001">
@@ -345,13 +345,16 @@
             console.log('GLTF/GLBファイルの読み込みを開始...');
             
             const loader = new GLTFLoader();
-            loader.parse(data, '', (gltf) => {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            loader.load(url, (gltf) => {
                 loadedModel = gltf.scene;
                 scene.add(loadedModel);
                 fitCameraToObject(loadedModel);
                 console.log('GLTFモデルがシーンに追加されました。');
-            }, (error) => {
-                console.error('GLTFファイルのパースでエラーが発生しました:', error);
+            }, undefined, (error) => {
+                console.error('GLTFファイルの読み込みでエラーが発生しました:', error);
                 alert('GLTFファイルの読み込みに失敗しました。');
             });
         }
@@ -360,13 +363,16 @@
             console.log('FBXファイルの読み込みを開始...');
             
             const loader = new FBXLoader();
-            loader.parse(data, '', (object) => {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            loader.load(url, (object) => {
                 loadedModel = object;
                 scene.add(loadedModel);
                 fitCameraToObject(loadedModel);
                 console.log('FBXモデルがシーンに追加されました。');
-            }, (error) => {
-                console.error('FBXファイルのパースでエラーが発生しました:', error);
+            }, undefined, (error) => {
+                console.error('FBXファイルの読み込みでエラーが発生しました:', error);
                 alert('FBXファイルの読み込みに失敗しました。');
             });
         }
@@ -375,13 +381,16 @@
             console.log('OBJファイルの読み込みを開始...');
             
             const loader = new OBJLoader();
-            loader.parse(data, (object) => {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            loader.load(url, (object) => {
                 loadedModel = object;
                 scene.add(loadedModel);
                 fitCameraToObject(loadedModel);
                 console.log('OBJモデルがシーンに追加されました。');
-            }, (error) => {
-                console.error('OBJファイルのパースでエラーが発生しました:', error);
+            }, undefined, (error) => {
+                console.error('OBJファイルの読み込みでエラーが発生しました:', error);
                 alert('OBJファイルの読み込みに失敗しました。');
             });
         }
