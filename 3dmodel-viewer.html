@@ -84,7 +84,8 @@
         "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js",
         "three/examples/jsm/loaders/FBXLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/FBXLoader.js",
         "three/examples/jsm/loaders/OBJLoader.js": "https://unpkg.com/three@0.159.0/examples/jsm/loaders/OBJLoader.js",
-        "three/examples/jsm/exporters/PLYExporter.js": "https://unpkg.com/three@0.159.0/examples/jsm/exporters/PLYExporter.js"
+        "three/examples/jsm/exporters/PLYExporter.js": "https://unpkg.com/three@0.159.0/examples/jsm/exporters/PLYExporter.js",
+        "three/examples/jsm/exporters/GLTFExporter.js": "https://unpkg.com/three@0.159.0/examples/jsm/exporters/GLTFExporter.js"
       }
     }
     </script>
@@ -97,6 +98,7 @@
         import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
         import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
         import { PLYExporter } from 'three/examples/jsm/exporters/PLYExporter.js';
+        import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
         let scene, camera, renderer, controls;
         let loadedModel = null;
@@ -231,18 +233,38 @@
 
         function saveModel() {
             if (loadedModel) {
-                const exporter = new PLYExporter();
-                const options = { binary: true, littleEndian: true };
-                
-                exporter.parse(loadedModel, function (result) {
-                    const blob = new Blob([result], { type: 'application/octet-stream' });
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(blob);
-                    link.download = 'exported_model.ply';
-                    link.click();
-                }, options);
+                const exporters = {
+                    'ply': new PLYExporter(),
+                    'gltf': new GLTFExporter(),
+                    'glb': new GLTFExporter(),
+                    // 他のエクスポーターを追加する場合はここに追加
+                };
 
-                console.log('モデルが保存されました');
+                const exporter = exporters[originalFileType];
+                if (exporter) {
+                    if (originalFileType === 'gltf' || originalFileType === 'glb') {
+                        exporter.parse(loadedModel, function (result) {
+                            const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `exported_model.${originalFileType}`;
+                            link.click();
+                        }, { binary: originalFileType === 'glb' });
+                    } else {
+                        const options = { binary: true, littleEndian: true };
+                        exporter.parse(loadedModel, function (result) {
+                            const blob = new Blob([result], { type: 'application/octet-stream' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `exported_model.${originalFileType}`;
+                            link.click();
+                        }, options);
+                    }
+
+                    console.log('モデルが保存されました');
+                } else {
+                    console.warn('サポートされていないファイル形式のため保存できません。');
+                }
             } else {
                 console.warn('保存するモデルがありません。');
             }
