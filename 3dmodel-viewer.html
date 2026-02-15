@@ -2,79 +2,114 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Model Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Viewer</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #2c2c2c;
-        }
-
+        body { margin: 0; overflow: hidden; background-color: #2c2c2c; font-family: sans-serif; }
+        
         #drop-area {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: rgba(0, 0, 0, 0.5);
-            color: white;
-            font-size: 2em;
-            text-align: center;
-            z-index: 10;
-            border: 3px dashed white;
-            border-radius: 10px;
+            position: absolute; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background-color: rgba(0, 0, 0, 0.5); color: white;
+            font-size: 1.2em; text-align: center; z-index: 10;
+            border: 4px dashed #fff; box-sizing: border-box; cursor: pointer; padding: 20px;
+        }
+        
+        /* メニュー開閉ボタン：右上に配置 */
+        #toggle-menu {
+            position: fixed; top: 20px; right: 20px;
+            z-index: 40; background: #444; color: white;
+            border: 1px solid white; border-radius: 8px;
+            width: 70px; height: 40px; cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            font-size: 12px; font-weight: bold;
         }
 
+        /* コントロールパネル：下から展開し、MENUボタンと重ならないように調整 */
         #control-panel {
-            position: fixed;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            color: white;
-            border-radius: 5px;
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            background-color: rgba(0, 0, 0, 0.9); padding: 20px 10px;
+            color: white; display: flex; flex-wrap: wrap;
+            justify-content: center; gap: 8px; z-index: 30;
+            max-height: 60vh; overflow-y: auto; box-sizing: border-box;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-top-left-radius: 20px; border-top-right-radius: 20px;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
+        }
+        
+        #control-panel.collapsed {
+            transform: translateY(100%);
         }
 
-        button, input {
-            background-color: #444;
-            color: white;
-            border: 1px solid #fff;
-            padding: 10px;
-            margin: 5px;
-            cursor: pointer;
-            border-radius: 5px;
+        .control-group {
+            display: flex; flex-direction: column; background: #333;
+            padding: 8px; border-radius: 8px; font-size: 11px; min-width: 100px;
+            flex: 1 1 100px; max-width: 150px;
         }
-
-        button:hover {
-            background-color: #666;
+        
+        .control-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+        
+        button {
+            background-color: #555; color: white; border: 1px solid #fff;
+            padding: 10px; cursor: pointer; border-radius: 6px; font-size: 12px;
+            min-width: 80px;
         }
+        
+        button:active { background-color: #888; }
+        label { margin-bottom: 4px; color: #ddd; font-weight: bold; }
+        input[type="range"] { width: 100%; cursor: pointer; margin: 5px 0; }
+        input[type="color"] { width: 40px; height: 40px; border: none; padding: 0; cursor: pointer; border-radius: 4px; }
+        #file-input { display: none; }
 
-        input[type="color"] {
-            height: 40px;
-            width: 40px;
-            padding: 0;
+        /* スマホ向け微調整 */
+        @media (max-width: 600px) {
+            .control-group { min-width: 140px; }
         }
     </style>
 </head>
 <body>
-    <div id="drop-area">3Dモデルファイルをここにドラッグ＆ドロップ</div>
+    <div id="drop-area">モデルを読み込む (Tap/Click/Drop)</div>
+    <input type="file" id="file-input" accept=".glb,.gltf,.ply,.fbx,.obj,model/gltf-binary,model/gltf+json,model/obj,model/fbx">
+
+    <button id="toggle-menu">MENU</button>
+
     <div id="control-panel">
-        <button id="swap-axes">XYZ軸を入れ替える</button>
-        <button id="save-model">現在のXYZ軸で保存</button>
-        <button id="reset-rotation">回転をリセット</button>
-        <button id="reset-view">描画をリセット</button>
-        <input type="range" id="point-size" min="0.0001" max="0.01" step="0.0001" value="0.001">
-        <input type="color" id="background-color" value="#2c2c2c">
+        <button id="swap-axes">XYZ軸入替</button>
+        <button id="save-model">保存</button>
+        <button id="reset-rotation">回転リセット</button>
+        <button id="reset-view">全クリア</button>
+        
+        <div class="control-group">
+            <label>点サイズ</label>
+            <input type="range" id="point-size" min="0.0001" max="0.02" step="0.0005" value="0.001">
+        </div>
+
+        <div class="control-group">
+            <label>環境全体(影消し)</label>
+            <input type="range" id="ambient-intensity" min="0" max="10" step="0.1" value="2.0">
+        </div>
+
+        <div class="control-group">
+            <label>直射光(メイン)</label>
+            <input type="range" id="direct-intensity" min="0" max="10" step="0.1" value="3.0">
+        </div>
+
+        <div class="control-group">
+            <label>光源位置 X / Y / Z</label>
+            <div class="control-row">
+                <input type="range" id="light-x" min="-30" max="30" step="0.5" value="10">
+                <input type="range" id="light-y" min="-30" max="30" step="0.5" value="10">
+                <input type="range" id="light-z" min="-30" max="30" step="0.5" value="10">
+            </div>
+        </div>
+
+        <div class="control-group" style="max-width: 60px; justify-content: center; align-items: center;">
+            <label>背景</label>
+            <input type="color" id="background-color" value="#2c2c2c">
+        </div>
     </div>
 
     <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
-
     <script type="importmap">
     {
       "imports": {
@@ -100,347 +135,152 @@
         import { PLYExporter } from 'three/examples/jsm/exporters/PLYExporter.js';
         import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
-        let scene, camera, renderer, controls;
-        let loadedModel = null;
-        let originalFileType = '';
+        let scene, camera, renderer, controls, loadedModel = null, originalFileType = '';
+        let hemiLight, directionalLight, backLight;
+        let swapCount = 0;
 
         const dropArea = document.getElementById('drop-area');
-        const swapAxesButton = document.getElementById('swap-axes');
-        const saveModelButton = document.getElementById('save-model');
-        const resetRotationButton = document.getElementById('reset-rotation');
-        const resetViewButton = document.getElementById('reset-view');
-        const pointSizeSlider = document.getElementById('point-size');
-        const backgroundColorPicker = document.getElementById('background-color');
+        const fileInput = document.getElementById('file-input');
+        const toggleMenu = document.getElementById('toggle-menu');
+        const controlPanel = document.getElementById('control-panel');
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        function onModelLoaded(model) {
+            loadedModel = model;
+            scene.add(loadedModel);
+            loadedModel.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach(m => {
+                        if (m.color && m.color.r === 0 && m.color.g === 0 && m.color.b === 0) m.color.set(0xcccccc);
+                        if (m instanceof THREE.MeshStandardMaterial) {
+                            m.metalness = 0.2; m.roughness = 0.8; m.envMapIntensity = 1.5;
+                        }
+                        m.needsUpdate = true;
+                    });
+                }
+            });
+            fitCameraToObject(loadedModel);
+        }
+
+        function handleFile(file) {
+            if (!file) return;
+            const ext = file.name.split('.').pop().toLowerCase();
+            originalFileType = ext;
+            const url = URL.createObjectURL(file);
+            if (loadedModel) scene.remove(loadedModel);
+            
+            if (ext === 'ply') {
+                new PLYLoader().load(url, (geo) => {
+                    const mat = new THREE.PointsMaterial({ size: parseFloat(document.getElementById('point-size').value), vertexColors: geo.attributes.color !== undefined });
+                    onModelLoaded(new THREE.Points(geo, mat));
+                });
+            } else if (ext === 'gltf' || ext === 'glb') {
+                new GLTFLoader().load(url, (gltf) => onModelLoaded(gltf.scene));
+            } else if (ext === 'fbx') {
+                new FBXLoader().load(url, (obj) => onModelLoaded(obj));
+            } else if (ext === 'obj') {
+                new OBJLoader().load(url, (obj) => onModelLoaded(obj));
+            }
+            dropArea.style.display = 'none';
+        }
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 20000);
+            
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
             renderer.setClearColor(0x2c2c2c, 1);
             document.body.appendChild(renderer.domElement);
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.dampingFactor = 0.25;
-            controls.enableZoom = true;
-            controls.enableRotate = true;
-            controls.enablePan = true;
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.PAN
+            };
+            controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+            renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
-            camera.position.set(0, 1, 5);
-
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-            scene.add(ambientLight);
-
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            directionalLight.position.set(1, 1, 1);
+            hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
+            scene.add(hemiLight);
+            directionalLight = new THREE.DirectionalLight(0xffffff, 3.0);
+            directionalLight.position.set(10, 10, 10);
             scene.add(directionalLight);
+            backLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            backLight.position.set(-10, -5, -10);
+            scene.add(backLight);
 
-            setupEventListeners();
-            animate();
-        }
-
-        function setupEventListeners() {
-            document.body.addEventListener('dragover', (event) => event.preventDefault());
-            document.body.addEventListener('drop', handleFileDrop);
-            swapAxesButton.addEventListener('click', swapAxes);
-            saveModelButton.addEventListener('click', saveModel);
-            resetRotationButton.addEventListener('click', resetRotation);
-            resetViewButton.addEventListener('click', resetView);
-            pointSizeSlider.addEventListener('input', updatePointSize);
-            backgroundColorPicker.addEventListener('input', updateBackgroundColor);
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function handleFileDrop(event) {
-            event.preventDefault();
-            const file = event.dataTransfer.files[0];
-            if (file) {
-                console.log('ファイルがドロップされました:', file.name);
-                loadModel(file);
-                dropArea.style.display = 'none';
-            } else {
-                alert('ファイルをドラッグ＆ドロップしてください。');
-            }
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }
-
-        function loadModel(file) {
-            const fileExtension = file.name.split('.').pop().toLowerCase();
-            console.log('ファイル拡張子:', fileExtension);
-            originalFileType = fileExtension;
-
-            const reader = new FileReader();
+            // UIコントロール
+            toggleMenu.onclick = () => {
+                controlPanel.classList.toggle('collapsed');
+                toggleMenu.innerText = controlPanel.classList.contains('collapsed') ? 'MENU' : 'CLOSE';
+            };
             
-            reader.onload = function(event) {
-                const data = event.target.result;
-                const loaders = {
-                    'ply': loadPLY,
-                    'gltf': loadGLTF,
-                    'glb': loadGLTF,
-                    'fbx': loadFBX,
-                    'obj': loadOBJ
-                };
+            // 初回読み込み時はメニューを閉じておく（任意）
+            controlPanel.classList.add('collapsed');
 
-                const loader = loaders[fileExtension];
-                if (loader) {
-                    loader(data);
-                } else {
-                    alert('サポートされていないファイル形式です。');
-                    console.error('サポートされていないファイル形式:', fileExtension);
-                }
-            };
+            dropArea.onclick = () => fileInput.click();
+            fileInput.onchange = (e) => handleFile(e.target.files[0]);
+            window.addEventListener('dragover', (e) => e.preventDefault());
+            window.addEventListener('drop', (e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); });
 
-            reader.onerror = function(error) {
-                console.error('ファイルの読み込みでエラー:', error);
-                alert('ファイルの読み込みに失敗しました。');
-            };
-
-            reader.readAsArrayBuffer(file);
-        }
-
-        let swapCount = 0;
-        function swapAxes() {
-            if (loadedModel) {
+            document.getElementById('swap-axes').onclick = () => {
+                if (!loadedModel) return;
                 swapCount++;
                 const matrix = new THREE.Matrix4();
-                const rotations = [
-                    [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-                    [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
-                ];
-                matrix.set(...rotations[swapCount % 3]);
-
+                const rot = [[0,1,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,1],[1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1],[0,0,1,0, 0,1,0,0, 1,0,0,0, 0,0,0,1]];
+                matrix.set(...rot[swapCount % 3]);
                 loadedModel.applyMatrix4(matrix);
-
-                if (loadedModel.geometry) {
-                    loadedModel.geometry.computeBoundingBox();
-                    loadedModel.geometry.computeBoundingSphere();
-                }
-
                 fitCameraToObject(loadedModel);
-                console.log('XYZ軸が入れ替えられました');
-            } else {
-                console.warn('モデルがロードされていません。');
-            }
-        }
+            };
+            document.getElementById('save-model').onclick = () => {
+                if (!loadedModel) return;
+                const exporter = (originalFileType === 'ply') ? new PLYExporter() : new GLTFExporter();
+                exporter.parse(loadedModel, (res) => {
+                    const blob = new Blob([res instanceof ArrayBuffer ? res : JSON.stringify(res)], {type:'application/octet-stream'});
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `model.${originalFileType}`; a.click();
+                }, { binary: true });
+            };
+            document.getElementById('reset-rotation').onclick = () => { if(loadedModel){ loadedModel.rotation.set(0,0,0); loadedModel.position.set(0,0,0); fitCameraToObject(loadedModel); } };
+            document.getElementById('reset-view').onclick = () => location.reload();
 
-        function saveModel() {
-            if (loadedModel) {
-                const exporters = {
-                    'ply': new PLYExporter(),
-                    'gltf': new GLTFExporter(),
-                    'glb': new GLTFExporter(),
-                    // 他のエクスポーターを追加する場合はここに追加
-                };
+            document.getElementById('point-size').oninput = (e) => { if(loadedModel) loadedModel.traverse(c => { if(c.isPoints) c.material.size = parseFloat(e.target.value); }); };
+            document.getElementById('ambient-intensity').oninput = (e) => hemiLight.intensity = parseFloat(e.target.value);
+            document.getElementById('direct-intensity').oninput = (e) => { 
+                const v = parseFloat(e.target.value); directionalLight.intensity = v; backLight.intensity = v * 0.5;
+            };
+            document.getElementById('background-color').oninput = (e) => renderer.setClearColor(e.target.value);
+            const updateLightPos = () => {
+                const x = parseFloat(document.getElementById('light-x').value), y = parseFloat(document.getElementById('light-y').value), z = parseFloat(document.getElementById('light-z').value);
+                directionalLight.position.set(x, y, z); backLight.position.set(-x, -y * 0.5, -z);
+            };
+            document.getElementById('light-x').oninput = updateLightPos;
+            document.getElementById('light-y').oninput = updateLightPos;
+            document.getElementById('light-z').oninput = updateLightPos;
 
-                const exporter = exporters[originalFileType];
-                if (exporter) {
-                    if (originalFileType === 'gltf' || originalFileType === 'glb') {
-                        exporter.parse(loadedModel, function (result) {
-                            const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(blob);
-                            link.download = `exported_model.${originalFileType}`;
-                            link.click();
-                        }, { binary: originalFileType === 'glb' });
-                    } else {
-                        const options = { binary: true, littleEndian: true };
-                        exporter.parse(loadedModel, function (result) {
-                            const blob = new Blob([result], { type: 'application/octet-stream' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(blob);
-                            link.download = `exported_model.${originalFileType}`;
-                            link.click();
-                        }, options);
-                    }
-
-                    console.log('モデルが保存されました');
-                } else {
-                    console.warn('サポートされていないファイル形式のため保存できません。');
-                }
-            } else {
-                console.warn('保存するモデルがありません。');
-            }
-        }
-
-        function resetRotation() {
-            if (loadedModel) {
-                // モデルの回転をリセット
-                loadedModel.rotation.set(0, 0, 0);
-                
-                // モデルの位置をリセット
-                loadedModel.position.set(0, 0, 0);
-
-                // カメラとコントロールをリセット
-                fitCameraToObject(loadedModel);
-
-                console.log('モデルの回転と位置がリセットされました');
-            } else {
-                console.warn('リセットするモデルがありません。');
-            }
-        }
-
-        function setupLights() {
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-        }
-
-        function resetView() {
-            // シーン内の全オブジェクトを削除
-            while (scene.children.length > 0) {
-                const obj = scene.children[0];
-                scene.remove(obj);
-            }
-
-            // モデルと関連データを初期化
-            loadedModel = null;
-            originalFileType = '';
-
-            // カメラとコントロールの初期化
-            camera.position.set(0, 1, 5);
-            camera.lookAt(0, 0, 0);
-            controls.target.set(0, 0, 0);
-            controls.reset();
-
-            // 背景色をデフォルトに戻す
-            renderer.setClearColor(0x2c2c2c, 1);
-            renderer.clear();
-
-            // 光源の再設定
-            setupLights();
-
-            // ドロップエリアを再表示
-            dropArea.style.display = 'flex';
-
-            console.log('描画がリセットされました');
-        }
-
-        function updatePointSize() {
-            if (loadedModel && loadedModel.material) {
-                loadedModel.material.size = parseFloat(pointSizeSlider.value);
-                console.log('点のサイズが更新されました:', loadedModel.material.size);
-            }
-        }
-
-        function updateBackgroundColor() {
-            const color = new THREE.Color(backgroundColorPicker.value);
-            renderer.setClearColor(color);
-            console.log('背景色が更新されました:', color.getHexString());
-        }
-
-        function loadPLY(data) {
-            console.log('PLYファイルの読み込みを開始...');
-
-            const loader = new PLYLoader();
-            
-            try {
-                const geometry = loader.parse(data);
-                console.log('ジオメトリ情報:', geometry);
-                
-                const material = new THREE.PointsMaterial({ 
-                    size: parseFloat(pointSizeSlider.value),
-                    vertexColors: geometry.attributes.color !== undefined
-                });
-
-                loadedModel = new THREE.Points(geometry, material);
-                scene.add(loadedModel);
-
-                fitCameraToObject(loadedModel);
-                
-            } catch (error) {
-                console.error('PLYファイルのパースでエラーが発生しました:', error);
-                alert('PLYファイルの読み込みに失敗しました。');
-            }
-        }
-
-        function loadGLTF(data) {
-            console.log('GLTF/GLBファイルの読み込みを開始...');
-            
-            const loader = new GLTFLoader();
-            const blob = new Blob([data], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            
-            loader.load(url, (gltf) => {
-                loadedModel = gltf.scene;
-                scene.add(loadedModel);
-                fitCameraToObject(loadedModel);
-                console.log('GLTFモデルがシーンに追加されました。');
-            }, undefined, (error) => {
-                console.error('GLTFファイルの読み込みでエラーが発生しました:', error);
-                alert('GLTFファイルの読み込みに失敗しました。');
-            });
-        }
-
-        function loadFBX(data) {
-            console.log('FBXファイルの読み込みを開始...');
-            
-            const loader = new FBXLoader();
-            const blob = new Blob([data], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            
-            loader.load(url, (object) => {
-                loadedModel = object;
-                scene.add(loadedModel);
-                fitCameraToObject(loadedModel);
-                console.log('FBXモデルがシーンに追加されました。');
-            }, undefined, (error) => {
-                console.error('FBXファイルの読み込みでエラーが発生しました:', error);
-                alert('FBXファイルの読み込みに失敗しました。');
-            });
-        }
-
-        function loadOBJ(data) {
-            console.log('OBJファイルの読み込みを開始...');
-            
-            const loader = new OBJLoader();
-            const blob = new Blob([data], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
-            
-            loader.load(url, (object) => {
-                loadedModel = object;
-                scene.add(loadedModel);
-                fitCameraToObject(loadedModel);
-                console.log('OBJモデルがシーンに追加されました。');
-            }, undefined, (error) => {
-                console.error('OBJファイルの読み込みでエラーが発生しました:', error);
-                alert('OBJファイルの読み込みに失敗しました。');
-            });
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+            animate();
         }
 
         function fitCameraToObject(object) {
             const box = new THREE.Box3().setFromObject(object);
             const center = box.getCenter(new THREE.Vector3());
-            
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
-            
-            const fov = camera.fov * (Math.PI / 180);
-            
-            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov / 2));
-            
-            // カメラ位置をリセット
-            camera.position.set(0, 0, cameraZ * 2);
-            camera.lookAt(center);
-
-            // コントロールのターゲットを中心に設定
+            const cameraZ = Math.abs(maxDim / 2 / Math.tan(camera.fov * Math.PI / 360));
+            camera.position.set(center.x, center.y, center.z + cameraZ * 3.0);
             controls.target.copy(center);
             controls.update();
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
         init();
