@@ -6,7 +6,6 @@
     <title>3D Viewer</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #2c2c2c; font-family: sans-serif; }
-        
         #drop-area {
             position: absolute; width: 100%; height: 100%;
             display: flex; justify-content: center; align-items: center;
@@ -14,8 +13,6 @@
             font-size: 1.2em; text-align: center; z-index: 10;
             border: 4px dashed #fff; box-sizing: border-box; cursor: pointer; padding: 20px;
         }
-        
-        /* メニュー開閉ボタン：右上に配置 */
         #toggle-menu {
             position: fixed; top: 20px; right: 20px;
             z-index: 40; background: #444; color: white;
@@ -24,8 +21,6 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5);
             font-size: 12px; font-weight: bold;
         }
-
-        /* コントロールパネル：下から展開し、MENUボタンと重ならないように調整 */
         #control-panel {
             position: fixed; bottom: 0; left: 0; width: 100%;
             background-color: rgba(0, 0, 0, 0.9); padding: 20px 10px;
@@ -34,42 +29,30 @@
             max-height: 60vh; overflow-y: auto; box-sizing: border-box;
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-top-left-radius: 20px; border-top-right-radius: 20px;
-            box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
         }
-        
-        #control-panel.collapsed {
-            transform: translateY(100%);
-        }
-
+        #control-panel.collapsed { transform: translateY(100%); }
         .control-group {
             display: flex; flex-direction: column; background: #333;
             padding: 8px; border-radius: 8px; font-size: 11px; min-width: 100px;
             flex: 1 1 100px; max-width: 150px;
         }
-        
         .control-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-        
         button {
             background-color: #555; color: white; border: 1px solid #fff;
             padding: 10px; cursor: pointer; border-radius: 6px; font-size: 12px;
             min-width: 80px;
         }
-        
         button:active { background-color: #888; }
         label { margin-bottom: 4px; color: #ddd; font-weight: bold; }
         input[type="range"] { width: 100%; cursor: pointer; margin: 5px 0; }
-        input[type="color"] { width: 40px; height: 40px; border: none; padding: 0; cursor: pointer; border-radius: 4px; }
+        input[type="color"] { width: 40px; height: 40px; border: none; padding: 0; cursor: pointer; }
         #file-input { display: none; }
-
-        /* スマホ向け微調整 */
-        @media (max-width: 600px) {
-            .control-group { min-width: 140px; }
-        }
+        @media (max-width: 600px) { .control-group { min-width: 140px; } }
     </style>
 </head>
 <body>
     <div id="drop-area">モデルを読み込む (Tap/Click/Drop)</div>
-    <input type="file" id="file-input" accept=".glb,.gltf,.ply,.fbx,.obj,model/gltf-binary,model/gltf+json,model/obj,model/fbx">
+    <input type="file" id="file-input" accept=".glb,.gltf,.ply,.fbx,.obj,model/gltf-binary,model/gltf+json,application/octet-stream">
 
     <button id="toggle-menu">MENU</button>
 
@@ -83,17 +66,14 @@
             <label>点サイズ</label>
             <input type="range" id="point-size" min="0.0001" max="0.02" step="0.0005" value="0.001">
         </div>
-
         <div class="control-group">
             <label>環境全体(影消し)</label>
             <input type="range" id="ambient-intensity" min="0" max="10" step="0.1" value="2.0">
         </div>
-
         <div class="control-group">
             <label>直射光(メイン)</label>
             <input type="range" id="direct-intensity" min="0" max="10" step="0.1" value="3.0">
         </div>
-
         <div class="control-group">
             <label>光源位置 X / Y / Z</label>
             <div class="control-row">
@@ -102,7 +82,6 @@
                 <input type="range" id="light-z" min="-30" max="30" step="0.5" value="10">
             </div>
         </div>
-
         <div class="control-group" style="max-width: 60px; justify-content: center; align-items: center;">
             <label>背景</label>
             <input type="color" id="background-color" value="#2c2c2c">
@@ -152,19 +131,37 @@
 
         function onModelLoaded(model) {
             loadedModel = model;
-            scene.add(loadedModel);
+            
+            // FBX等のマテリアル補正を確実に行うための再帰処理
             loadedModel.traverse((child) => {
-                if (child.isMesh && child.material) {
+                if (child.isMesh) {
+                    // 法線を再計算してライティングを正しく受けるようにする
+                    if (child.geometry) {
+                        child.geometry.computeVertexNormals();
+                    }
+                    
                     const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach(m => {
-                        if (m.color && m.color.r === 0 && m.color.g === 0 && m.color.b === 0) m.color.set(0xcccccc);
-                        if (m instanceof THREE.MeshStandardMaterial) {
-                            m.metalness = 0.2; m.roughness = 0.8; m.envMapIntensity = 1.5;
-                        }
-                        m.needsUpdate = true;
+                    const fixedMaterials = materials.map(m => {
+                        // 既存のマテリアル情報をベースに、確実に明るくなるマテリアルへ再生成
+                        const color = (m.color && (m.color.r !== 0 || m.color.g !== 0 || m.color.b !== 0)) ? m.color : new THREE.Color(0xcccccc);
+                        
+                        return new THREE.MeshStandardMaterial({
+                            color: color,
+                            map: m.map || null,
+                            roughness: 0.7,
+                            metalness: 0.2,
+                            side: THREE.DoubleSide,
+                            flatShading: false
+                        });
                     });
+
+                    child.material = fixedMaterials.length > 1 ? fixedMaterials : fixedMaterials[0];
+                    child.castShadow = true;
+                    child.receiveShadow = true;
                 }
             });
+
+            scene.add(loadedModel);
             fitCameraToObject(loadedModel);
         }
 
@@ -192,7 +189,7 @@
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 20000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -203,30 +200,26 @@
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.mouseButtons = {
-                LEFT: THREE.MOUSE.ROTATE,
-                MIDDLE: THREE.MOUSE.DOLLY,
-                RIGHT: THREE.MOUSE.PAN
-            };
+            controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
             controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
             renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
-            hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
+            // 光源を極めて強く設定
+            hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 3.0);
             scene.add(hemiLight);
-            directionalLight = new THREE.DirectionalLight(0xffffff, 3.0);
+            
+            directionalLight = new THREE.DirectionalLight(0xffffff, 5.0);
             directionalLight.position.set(10, 10, 10);
             scene.add(directionalLight);
-            backLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            
+            backLight = new THREE.DirectionalLight(0xffffff, 3.0);
             backLight.position.set(-10, -5, -10);
             scene.add(backLight);
 
-            // UIコントロール
             toggleMenu.onclick = () => {
                 controlPanel.classList.toggle('collapsed');
                 toggleMenu.innerText = controlPanel.classList.contains('collapsed') ? 'MENU' : 'CLOSE';
             };
-            
-            // 初回読み込み時はメニューを閉じておく（任意）
             controlPanel.classList.add('collapsed');
 
             dropArea.onclick = () => fileInput.click();
@@ -278,7 +271,7 @@
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
             const cameraZ = Math.abs(maxDim / 2 / Math.tan(camera.fov * Math.PI / 360));
-            camera.position.set(center.x, center.y, center.z + cameraZ * 3.0);
+            camera.position.set(center.x, center.y, center.z + cameraZ * 3.5);
             controls.target.copy(center);
             controls.update();
         }
